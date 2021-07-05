@@ -153,7 +153,7 @@ map entities: (89)
     88: type:  1, attrs:  12 250 225 200   0, pos: 664.000000 496.000000 612.000000
 ```
 
-To only generate trimmed map files for use on a server use a script like [shorten.sh](./shorten.sh). Afterwards place the newly created packages directory on the server. The server needs to have
+To only generate trimmed map files for use on a server use a script like [genall.sh](./genall.sh).
 
 ## Roadmap
 
