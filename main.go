@@ -265,9 +265,73 @@ func readEnts(stream io.Reader, numEnts int32, extraEntInfoLen int) ([]Entity, e
 	return ents, nil
 }
 
+// writes a minimal OGZ only containing the ents data
+// (v29, since that doesn't have numvslots and is thus 4 bytes smaller than v30+)
+//
+// the file will contain the following fields:
+//
+// length in bytes | contents
+//              36 | header
+//               5 | gameident: len("fps"), "fps", 0x00
+//               2 | extraentinfosize: 0x00 0x00
+//               2 | len(extras): 0x00 0x00
+//               2 | nummru: 0x00 0x00
+//  len(ents) * 24 | ents
+//
+// each ent is 24 bytes in length:
+//
+// length in bytes | contents
+//             3*4 | x, y, z
+//             2*5 | attributes 1-5
+//               1 | type
+//               1 | reserved
+func writeEntsOnlyOGZ(ents []Entity, w io.Writer) error {
+	err := binary.Write(w, binary.LittleEndian, []byte{'O', 'C', 'T', 'A'})
+	if err != nil {
+		return fmt.Errorf("writing magic: %w", err)
+	}
+
+	err = binary.Write(w, binary.LittleEndian, []int32{
+		29,               // version
+		36,               // headersize
+		1,                // worldsize
+		int32(len(ents)), // numents
+		0,                // numpvs
+		0,                // lightmaps
+		0,                // blendmap
+		0,                // numvars
+	})
+	if err != nil {
+		return fmt.Errorf("writing header: %w", err)
+	}
+
+	err = binary.Write(w, binary.LittleEndian, []byte{
+		3, // len(fps)
+		'f', 'p', 's',
+		0,
+	})
+	if err != nil {
+		return fmt.Errorf("writing game identifier: %w", err)
+	}
+
+	err = binary.Write(w, binary.LittleEndian, []uint16{
+		0, // extraentinfosize
+		0, // len(extras)
+		0, // nummru
+	})
+	if err != nil {
+		return fmt.Errorf("writing extras/MRU size: %w", err)
+	}
+
+	err = binary.Write(w, binary.LittleEndian, ents)
+	if err != nil {
+		return fmt.Errorf("writing entities: %w", err)
+	}
+
+	return nil
+}
+
 var (
-	outputFileName      = flag.String("out", "trimmed.bin", "output file name")
-	noWrite             = flag.Bool("nowrite", false, "only parse, don't write trimmed output file")
 	printVersion        = flag.Bool("version", false, "print file format version")
 	printVars           = flag.Bool("vars", false, "print map vars (version 29+ only)")
 	printGameIdentifier = flag.Bool("game", false, "print game identifier")
@@ -276,7 +340,10 @@ var (
 
 func init() {
 	flag.CommandLine.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Reads uncompressed OGZ file on stdin and writes everything up to and including the entities to a file (omitting everything coming after the entities in the file).\n")
+		fmt.Fprintf(flag.CommandLine.Output(),
+			"Reads uncompressed OGZ file on stdin and writes a minimal uncompressed OGZ file containing only the entity data to stdout.\n"+
+				"Specify any print flag to only print the requested fields to stdout instead of the shrunk map data.\n",
+		)
 		flag.Usage()
 	}
 }
@@ -284,29 +351,18 @@ func init() {
 func main() {
 	flag.Parse()
 
-	var stdin io.Reader = os.Stdin
-	if !*noWrite {
-		trimmed, err := os.Create(*outputFileName)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error opening output file: %v\n", err)
-			os.Exit(1)
-		}
-		defer trimmed.Close()
-		stdin = io.TeeReader(os.Stdin, trimmed) // just write everything we read to the output file
-	}
-
-	hdr, numVars, err := readHeader(stdin)
+	hdr, numVars, err := readHeader(os.Stdin)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error parsing OGZ stream: %v\n", err)
+		fmt.Fprintf(os.Stderr, "parsing input stream: %v\n", err)
 		os.Exit(1)
 	}
 	if *printVersion {
 		fmt.Printf("OGZ file format version: %d\n", hdr.Version)
 	}
 
-	vars, err := readMapVars(stdin, numVars)
+	vars, err := readMapVars(os.Stdin, numVars)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error parsing OGZ stream: %v\n", err)
+		fmt.Fprintf(os.Stderr, "parsing input stream: %v\n", err)
 		os.Exit(1)
 	}
 	if *printVars {
@@ -320,30 +376,30 @@ func main() {
 		}
 	}
 
-	gameIdentifier, err := readGameIdentifier(stdin, hdr.Version)
+	gameIdentifier, err := readGameIdentifier(os.Stdin, hdr.Version)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error parsing OGZ stream: %v\n", err)
+		fmt.Fprintf(os.Stderr, "parsing input stream: %v\n", err)
 		os.Exit(1)
 	}
 	if *printGameIdentifier {
 		fmt.Printf("game: %s\n", gameIdentifier)
 	}
 
-	extraEntInfoLen, err := readExtraEntInfoLen(stdin, hdr.Version)
+	extraEntInfoLen, err := readExtraEntInfoLen(os.Stdin, hdr.Version)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error parsing OGZ stream: %v\n", err)
+		fmt.Fprintf(os.Stderr, "parsing input stream: %v\n", err)
 		os.Exit(1)
 	}
 
-	err = skipMostRecentlyUsed(stdin, hdr.Version)
+	err = skipMostRecentlyUsed(os.Stdin, hdr.Version)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error parsing OGZ stream: %v\n", err)
+		fmt.Fprintf(os.Stderr, "parsing input stream: %v\n", err)
 		os.Exit(1)
 	}
 
-	ents, err := readEnts(stdin, hdr.NumEnts, extraEntInfoLen)
+	ents, err := readEnts(os.Stdin, hdr.NumEnts, extraEntInfoLen)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error parsing OGZ stream: %v\n", err)
+		fmt.Fprintf(os.Stderr, "parsing input stream: %v\n", err)
 		os.Exit(1)
 	}
 	if *printEnts {
@@ -353,4 +409,13 @@ func main() {
 		}
 	}
 
+	if *printVersion || *printVars || *printGameIdentifier || *printEnts {
+		return
+	}
+
+	err = writeEntsOnlyOGZ(ents, os.Stdout)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "writing stripped OGZ: %v\n", err)
+		os.Exit(1)
+	}
 }

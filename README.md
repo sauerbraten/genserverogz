@@ -1,25 +1,22 @@
 # genserverogz
 
-A Sauerbraten map file parser/trimmer. Feed it a gunzipped .ogz file and it gives you a file containing only the header, map vars, game identifier, extras, MRU and entities sections. (You'll have to gzip that file back up in order to use it as an .ogz file on the server.)
+A Sauerbraten map file parser/trimmer. Feed it a gunzipped .ogz file and it gives you a file containing only the header, game identifier, and entities sections. (You'll have to gzip that file back up in order to use it as an .ogz file on the server. See: [genall.sh](./genall.sh))
 
-It specifically omits the vslots, lightmaps, blendmaps and octree geometry data from the original file. This reduces the file size by ~99.5%.
+It specifically omits the map vars, extras, MRU ("most recently used"), lightmaps, blendmaps, vslots and octree geometry data from the original file. This reduces the file size by ~99.6%.
 
-You can also use it as a parser of the processed sections, but it can't give you information on vslots, lightmaps, blendmaps and the octree since it never parses them.
+You can also use it as a parser of the processed sections, but it can't give you information on vslots, extras, MRU, lightmaps, blendmaps and the octree since it doesn't parse them.
 
 ## Usage
 
 ```
-$ genserverogz --help
-Reads uncompressed OGZ file on stdin and writes everything up to and including the entities to a file (omitting everything coming after the entities in the file).
+$ genserverogz -help
+Reads uncompressed OGZ file on stdin and writes a minimal uncompressed OGZ file containing only the entity data to stdout.
+Specify any print flag to only print the requested fields to stdout instead of the shrunk map data.
 Usage of genserverogz:
   -ents
         print map entities
   -game
         print game identifier
-  -nowrite
-        only parse, don't write trimmed output file
-  -out string
-        output file name (default "shortened.bin")
   -vars
         print map vars (version 29+ only)
   -version
@@ -31,7 +28,7 @@ Usage of genserverogz:
 To analyse a map file:
 
 ```
-$ gunzip --suffix=ogz --stdout ~/sauerbraten-code/packages/base/ot.ogz | genserverogz -nowrite -version -vars -game -ents
+$ gunzip --suffix=ogz --stdout ~/sauerbraten-code/packages/base/ot.ogz | genserverogz -version -vars -game -ents
 OGZ file format version: 33
 map variables: (26)
   skylight = 10196625
