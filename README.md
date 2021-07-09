@@ -151,7 +151,3 @@ map entities: (89)
 ```
 
 To only generate trimmed map files for use on a server use a script like [genall.sh](./genall.sh).
-
-## Roadmap
-
-We could save even more space by rewriting the input OGZ into a new one, omitting all map variables, MRU info and extra data.
